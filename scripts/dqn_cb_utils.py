@@ -239,7 +239,7 @@ class DQN(BaseLearningModel):
 
         self.loss = list()
 
-    def act(self, state):
+    def act(self, state: np.ndarray)->int:
         #raise NotImplementedError ## TODO: fully inspect for correctnes for centralized DQN version
         if np.random.rand() < self.epsilon:
             action = np.random.choice(self.action_space_size)
@@ -248,8 +248,8 @@ class DQN(BaseLearningModel):
             with torch.no_grad():
                 q_values = self.q_network(state_tensor)
             action = torch.argmax(q_values).item()
-        self.last_state = state
-        self.last_action = action
+        self.last_state = state ## TODO: safely remove this
+        self.last_action = action ## TODO: safely remove this
         return action
     
     def push(self, state, action, reward):
@@ -279,7 +279,6 @@ class DQN(BaseLearningModel):
             self.optimizer.step()
             step_loss.append(loss.item())
         self.loss.append(sum(step_loss)/len(step_loss))
-        print(f"\nLoss: {self.loss}\n") ## TODO; sanity check print, delete later
         self.decay_epsilon()
 
     def decay_epsilon(self):

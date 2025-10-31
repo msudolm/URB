@@ -250,7 +250,6 @@ if __name__ == "__main__":
         for agent_id in env.agent_iter():
             # print(f"\nCurrent agent: {agent_id}")
             #print(f"Travel times list: {env.travel_times_list}\n")
-
             
             _, reward, termination, truncation, info = env.last() # observation, reward, termination, truncation, info
 
@@ -261,6 +260,11 @@ if __name__ == "__main__":
 
 
             if termination or truncation: # Episode finished: add (s,a,r) tuples to replay buffer
+                train_every_counter += 1
+
+                # print(f"train_every_counter: {train_every_counter}")
+                # print(f"update_every_k_agents: {update_every_k_agents}")
+                # print(f"train_every_counter % update_every_k_agents == {train_every_counter % update_every_k_agents}\n")
 
                 # Add agent (s,a,r) to the replay buffer
                 #reward, = [-info[kc.TRAVEL_TIME] for info in env.travel_times_list if str(info[kc.AGENT_ID]) == agent_id] # can be made more effective if the env contained info keyed by agent id
@@ -272,12 +276,10 @@ if __name__ == "__main__":
 
                 # Learn (optionally may be changed to after each k episodes)
                 if train_every_counter % update_every_k_agents == 0:
-                    print(f"\nTRAINING (next {train_every_counter} agents acted)\n")
                     train_every_counter = 0 # reset counter
                     q_net.learn()
 
             else:
-                train_every_counter += 1
 
                 # Update global observation (check env state and add machines that have finished since last step)
                 global_observation.update_recently_finished_machines(env)
@@ -293,8 +295,8 @@ if __name__ == "__main__":
 
 
 
-                print(f"Observation table:\n{global_observation.observation_table}")
-                print(f"Agent {agent_id} observation:\n{agent_observation}")
+                # print(f"Observation table:\n{global_observation.observation_table}")
+                # print(f"Agent {agent_id} observation:\n{agent_observation}")
                 
 
             env.step(action)
@@ -310,15 +312,47 @@ if __name__ == "__main__":
         pbar.update()
     
     
-    # ### Testing phase ###
+    ### Testing phase ###
+    ####################################
     # for agent in env.machine_agents:
     #     agent.model.epsilon = 0.0
     #     agent.model.q_network.eval()
+    ####################################
+
+    q_net.epsilon = 0.0
+    q_net.q_network.eval()
+
         
-    # pbar.set_description("Testing")
-    # for episode in range(test_eps):
-    #     env.reset()
-    #     for agent_id in env.agent_iter():
+    pbar.set_description("Testing")
+    global_observation = dqn_cb_utils.GlobalObservation(env.machine_agents)
+
+    for episode in range(test_eps):
+        env.reset()
+        global_observation.reset()
+
+        for agent_id in env.agent_iter():
+            agent_id_int, agent_obj = int(agent_id), agent_lookup[agent_id]
+
+            _, reward, termination, truncation, info = env.last()
+
+            if termination or truncation:
+                action = None
+
+            else:
+                # Update global observation
+                global_observation.update_recently_finished_machines(env)
+                global_observation.add_agent(agent_obj)
+
+                # Get agent observation from global observation
+                agent_observation = global_observation.generate_agent_observation(agent_id_int)
+
+                action = q_net.act(agent_observation)
+                global_observation.add_agent_action(agent_id_int, action)
+
+            env.step(action)
+        pbar.update()
+
+    ########################################################################        
     #         observation, reward, termination, truncation, info = env.last()
     #         if termination or truncation:
     #             action = None
@@ -326,11 +360,12 @@ if __name__ == "__main__":
     #             action = agent_lookup[agent_id].model.act(observation)
     #         env.step(action)
     #     pbar.update()
+    ##########################################################################
     
     # Finalize the experiment
     pbar.close()
     env.plot_results()
-    ## losses_pd = pd.DataFrame([{"id": agent.id, "losses": agent.model.loss} for agent in env.machine_agents]) #no agent.model.loss in centralized dqn
-    ## losses_pd.to_csv(os.path.join(records_folder, "losses.csv"), index=False)
+    losses_df = pd.DataFrame({"losses": q_net.loss}) #no agent.model.loss in centralized dqn
+    losses_df.to_csv(os.path.join(records_folder, "losses.csv"))#, index=False)
     env.stop_simulation()
     clear_SUMO_files(os.path.join(records_folder, "SUMO_output"), os.path.join(records_folder, "episodes"), remove_additional_files=True)
